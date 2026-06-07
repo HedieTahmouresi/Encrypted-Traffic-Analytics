@@ -100,6 +100,32 @@ class HybridExtractor:
             exploded = exploded.astype(float)
             unified_df = pd.concat([unified_df, exploded], axis=1)
             unified_df.drop(columns=[col], inplace=True)
+            
+        categorical_cols = ['conn_state', 'tls_version', 'cipher_suite', 'sni_domain', 'ftp_user', 'application_name', 'application_category_name']
+        for col in categorical_cols:
+            if col in unified_df.columns:
+                unified_df[col] = unified_df[col].fillna('None')
+
+        numeric_cols = ['missed_bytes', 'http_requests', 'ftp_failed_auths', 'ssh_auth_attempts']
+        for col in numeric_cols:
+            if col in unified_df.columns:
+                unified_df[col] = unified_df[col].fillna(0)
+                
+        unified_df['datetime'] = pd.to_datetime(unified_df['bidirectional_first_seen_ms'], unit='ms')
+        unified_df = unified_df.sort_values('datetime').set_index('datetime')
+        
+        ssh_mask = unified_df['application_name'].astype(str).str.contains('SSH', case=False, na=False)
+        
+        unified_df['ssh_flows_past_60s'] = (
+            unified_df[ssh_mask]
+            .groupby('src_ip')
+            .rolling('60s')['id']
+            .count()
+            .reset_index(level=0, drop=True)
+        )
+        
+        unified_df['ssh_flows_past_60s'] = unified_df['ssh_flows_past_60s'].fillna(0)
+        unified_df = unified_df.reset_index(drop=True)
         
         output_path = os.path.join(self.output_dir, "final_hybrid_features.csv")
         unified_df.to_csv(output_path, index=False)
