@@ -5,3 +5,4 @@ xgboost==2.0.3
 pyshark==0.6.0
 matplotlib==3.8.2
 seaborn==0.13.2
+nfstream==6.6.0
