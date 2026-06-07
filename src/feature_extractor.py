@@ -49,7 +49,6 @@ class HybridExtractor:
         print("[*] Merging NFStream and Zeek features...")
         
         df_nf = pd.read_csv(self.nfstream_csv)
-        
         zeek_log_path = os.path.join(self.zeek_log_dir, "ml_features.log")
         
         zeek_cols = [
@@ -75,15 +74,32 @@ class HybridExtractor:
         
         df_zeek.rename(columns={'proto': 'protocol'}, inplace=True)
         
+        df_zeek['ts_ms'] = (df_zeek['ts'] * 1000).astype('int64')
+        df_nf['bidirectional_first_seen_ms'] = df_nf['bidirectional_first_seen_ms'].astype('int64')
+
+        df_zeek.sort_values('ts_ms', inplace=True)
+        df_nf.sort_values('bidirectional_first_seen_ms', inplace=True)
+        
         merge_keys = ['src_ip', 'src_port', 'dst_ip', 'dst_port', 'protocol']
         
-        unified_df = pd.merge(
+        unified_df = pd.merge_asof(
             df_nf, 
             df_zeek, 
-            left_on=merge_keys, 
-            right_on=merge_keys, 
-            how='inner'
+            left_on='bidirectional_first_seen_ms', 
+            right_on='ts_ms', 
+            by=merge_keys, 
+            tolerance=2000, 
+            direction='nearest'
         )
+        unified_df.dropna(subset=['uid'], inplace=True)
+        
+        splt_columns = [col for col in unified_df.columns if 'splt' in col and unified_df[col].dtype == 'object']
+        for col in splt_columns:
+            exploded = unified_df[col].str.strip('[]').str.split(',', expand=True)
+            exploded.columns = [f"{col}_{i}" for i in range(exploded.shape[1])]
+            exploded = exploded.astype(float)
+            unified_df = pd.concat([unified_df, exploded], axis=1)
+            unified_df.drop(columns=[col], inplace=True)
         
         output_path = os.path.join(self.output_dir, "final_hybrid_features.csv")
         unified_df.to_csv(output_path, index=False)
