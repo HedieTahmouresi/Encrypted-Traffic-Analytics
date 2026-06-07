@@ -70,9 +70,12 @@ class HybridExtractor:
         )
         
         protocol_map = {'tcp': 6, 'udp': 17, 'icmp': 1}
-        df_zeek['proto'] = df_zeek['proto'].str.lower().map(protocol_map)
+        df_zeek['protocol'] = df_zeek['proto'].str.lower().map(protocol_map)
         
-        df_zeek.rename(columns={'proto': 'protocol'}, inplace=True)
+        df_zeek['protocol'] = df_zeek['protocol'].fillna(-1).astype('int64')
+        df_nf['protocol'] = df_nf['protocol'].fillna(-1).astype('int64')
+        
+        df_zeek.drop(columns=['proto'], inplace=True, errors='ignore')
         
         df_zeek['ts_ms'] = (df_zeek['ts'] * 1000).astype('int64')
         df_nf['bidirectional_first_seen_ms'] = df_nf['bidirectional_first_seen_ms'].astype('int64')
@@ -92,7 +95,7 @@ class HybridExtractor:
             direction='nearest'
         )
         unified_df.dropna(subset=['uid'], inplace=True)
-        
+    
         splt_columns = [col for col in unified_df.columns if 'splt' in col and unified_df[col].dtype == 'object']
         for col in splt_columns:
             exploded = unified_df[col].str.strip('[]').str.split(',', expand=True)
@@ -111,33 +114,35 @@ class HybridExtractor:
             if col in unified_df.columns:
                 unified_df[col] = unified_df[col].fillna(0)
                 
+        
         unified_df['datetime'] = pd.to_datetime(unified_df['bidirectional_first_seen_ms'], unit='ms')
-        unified_df = unified_df.sort_values('datetime').set_index('datetime')
+        unified_df = unified_df.sort_values('datetime')
+        
+        unified_df = unified_df.reset_index(drop=True)
+        unified_df['ssh_flows_past_60s'] = 0.0
         
         ssh_mask = unified_df['application_name'].astype(str).str.contains('SSH', case=False, na=False)
+        ssh_df = unified_df[ssh_mask].copy()
         
-        unified_df['ssh_flows_past_60s'] = (
-            unified_df[ssh_mask]
-            .groupby('src_ip')
-            .rolling('60s')['id']
-            .count()
-            .reset_index(level=0, drop=True)
-        )
-        
-        unified_df['ssh_flows_past_60s'] = unified_df['ssh_flows_past_60s'].fillna(0)
-        unified_df = unified_df.reset_index(drop=True)
-        
+        if not ssh_df.empty:
+            ssh_df['original_row_id'] = ssh_df.index
+            
+            ssh_df = ssh_df.sort_values(by=['src_ip', 'datetime'])
+            
+            ssh_df = ssh_df.set_index('datetime')
+            
+            rolling_series = ssh_df.groupby('src_ip', sort=False).rolling('60s')['original_row_id'].count()
+            
+            ssh_df['rolling_count'] = rolling_series.values
+            
+            ssh_df = ssh_df.set_index('original_row_id')
+            
+            unified_df.loc[ssh_df.index, 'ssh_flows_past_60s'] = ssh_df['rolling_count']
+            
         output_path = os.path.join(self.output_dir, "final_hybrid_features.csv")
         unified_df.to_csv(output_path, index=False)
         print(f"[+] Merge complete. Final dataset shape: {unified_df.shape}")
         
-        return unified_df
-
-    def process(self):
-        print(f"Starting extraction on {self.pcap_path}...")
-        self.run_nfstream()
-        self.run_zeek()
-        unified_df = self.merge_features()
         return unified_df
 
 if __name__ == "__main__":
