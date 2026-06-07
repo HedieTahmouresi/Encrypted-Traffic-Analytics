@@ -103,6 +103,17 @@ event ssh_client_version(c: connection, version: string) {
     c$ml_record$ssh_client = version;
 }
 
+event ssl_client_hello(c: connection, version: count, record_version: count, possible_ts: time, client_random: string, session_id: string, ciphers: index_vec, comp_methods: index_vec)
+{
+    if ( ! c?$ml_record ) return;
+    
+    if ( version in SSL::version_strings ) {
+        c$ml_record$tls_version = SSL::version_strings[version];
+    } else {
+        c$ml_record$tls_version = "Unknown";
+    }
+}
+
 # --- Final Aggregation Hook ---
 event connection_state_remove(c: connection) &priority=-10 {
     if ( ! c?$ml_record ) return;
