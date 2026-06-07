@@ -21,7 +21,9 @@ class HybridExtractor:
             source=self.pcap_path,
             decode_tunnels=True,
             statistical_analysis=True,  
-            splt_analysis=10
+            splt_analysis=10,
+            idle_timeout=300,
+            active_timeout=1800
         )
         
         total_flows = streamer.to_csv(path=self.nfstream_csv)

@@ -31,7 +31,8 @@ export {
         
         # FTP Features
         ftp_user:          string   &log &optional;
-        ftp_reply_code:    count    &log &optional;
+        ftp_failed_auths:  count    &log &default=0;
+        ftp_success_auths: count    &log &default=0;
         
         # SSH Features
         ssh_auth_success:  bool     &log &optional;
@@ -45,7 +46,6 @@ redef record connection += {
 };
 
 event zeek_init() {
-    # This creates a unified log called ml_features.log
     Log::create_stream(ML_Extractor::LOG, [$columns=Info, $path="ml_features"]);
 }
 
@@ -82,7 +82,12 @@ event ftp_request(c: connection, command: string, arg: string) {
 
 event ftp_reply(c: connection, code: count, msg: string, cont_resp: bool) {
     if ( ! c?$ml_record ) return;
-    c$ml_record$ftp_reply_code = code;
+    
+    if ( code == 530 ) {
+        c$ml_record$ftp_failed_auths += 1;
+    } else if ( code == 230 ) {
+        c$ml_record$ftp_success_auths += 1;
+    }
 }
 
 # --- SSH Hooks ---
@@ -103,8 +108,7 @@ event ssh_client_version(c: connection, version: string) {
     c$ml_record$ssh_client = version;
 }
 
-# --- Final Aggregation Hook ---
-event connection_state_remove(c: connection) {
+event connection_state_remove(c: connection) &priority=-10 {
     if ( ! c?$ml_record ) return;
 
     if ( c?$duration ) c$ml_record$duration = c$duration;
