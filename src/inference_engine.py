@@ -2,8 +2,8 @@ from preprocessor import ThreatPreprocessor
 
 class InferenceEngine:
     def __init__(self, tier1_path, tier2_path):
-        self.edge_bouncer = ThreatPreprocessor(tier1_path)
-        self.gateway_analyzer = ThreatPreprocessor(tier2_path)
+        self.edge_bouncer = ThreatPreprocessor(tier1_path, tier=1)
+        self.gateway_analyzer = ThreatPreprocessor(tier2_path, tier=2)
 
     def analyze_flow(self, flow_df):
         t1_input = self.edge_bouncer.sanitize_and_transform(flow_df)

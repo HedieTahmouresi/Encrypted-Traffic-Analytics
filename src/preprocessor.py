@@ -4,7 +4,7 @@ import pandas as pd
 class ThreatPreprocessor:
     def __init__(self, pipeline_path, tier=1):
         self.pipeline = joblib.load(pipeline_path)
-        self.expected_features = self.pipeline.named_steps['preprocessor'].get_feature_names_out()
+        self.expected_features = self.pipeline.named_steps['preprocessor'].feature_names_in_
         self.tier = tier
 
     def sanitize_and_transform(self, raw_df):
