@@ -144,6 +144,13 @@ class HybridExtractor:
         print(f"[+] Merge complete. Final dataset shape: {unified_df.shape}")
         
         return unified_df
+    
+    def process(self):
+        print(f"Starting extraction on {self.pcap_path}...")
+        self.run_nfstream()
+        self.run_zeek()
+        unified_df = self.merge_features()
+        return unified_df
 
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
