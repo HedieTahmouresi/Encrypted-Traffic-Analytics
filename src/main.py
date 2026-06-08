@@ -1,40 +1,55 @@
-import os
-import pandas as pd
+import warnings
 from feature_extractor import HybridExtractor
 from inference_engine import InferenceEngine
 
-# 1. Configuration
-PCAP_PATH = "./data/raw/test.pcap" # Point this to any PCAP for live demo
+warnings.filterwarnings('ignore') 
+
+PCAP_PATH = "./data/raw/test.pcap" 
 OUTPUT_DIR = "./data/processed/live_inference"
 MODEL_T1 = "./models/tier1_edge_pipeline.pkl"
 MODEL_T2 = "./models/tier2_gateway_pipeline.pkl"
 
 def main():
-    print("[*] Initializing Inference System...")
+    print("="*60)
+    print(" 🛡️ ENCRYPTED TRAFFIC ANALYTICS - LIVE INFERENCE ENGINE 🛡️")
+    print("="*60)
     
-    # Initialize Engine
     engine = InferenceEngine(MODEL_T1, MODEL_T2)
     extractor = HybridExtractor(PCAP_PATH, OUTPUT_DIR)
     
-    # 1. Extract features for the PCAP
-    print("[*] Analyzing PCAP...")
+    print("\n[*] Starting packet capture and hybrid feature extraction...")
     df = extractor.process()
     
-    # 2. Iterate through flows and run inference
-    print("[*] Running Live Detection...")
+    if df is None or df.empty:
+        print("[!] No valid network flows extracted. Exiting.")
+        return
+
+    print(f"\n[*] Live Detection Started on {len(df)} connections...")
+    print("-" * 60)
+    
+    stats = {"benign": 0, "anomaly": 0}
+
     for index, row in df.iterrows():
-        # Convert row to DataFrame for the preprocessor
         flow_df = row.to_frame().T
         
-        # Run detection
-        status, threat = engine.analyze_flow(flow_df)
+        src_ip = row.get('src_ip', 'Unknown')
+        dst_ip = row.get('dst_ip', 'Unknown')
+        dst_port = row.get('dst_port', 'Unknown')
         
-        # 3. Alert Output
+        status, threat_type = engine.analyze_flow(flow_df)
+        
         if status == "ANOMALY":
-            print(f"[ALERT] {status} DETECTED! Threat Type: {threat[0]} | Flow: {row['uid']}")
+            stats["anomaly"] += 1
+            print(f"[🚨 THREAT DETECTED] Type: {threat_type}")
+            print(f"    Target Flow: {src_ip} -> {dst_ip}:{dst_port}\n")
         else:
-            print("Benign flow detected.")
-            pass
+            stats["benign"] += 1
+
+    print("-" * 60)
+    print("[*] Inference Session Complete.")
+    print(f"    Total Flows Processed: {len(df)}")
+    print(f"    Benign Passed: {stats['benign']} | Anomalies Blocked: {stats['anomaly']}")
+    print("="*60)
 
 if __name__ == "__main__":
     main()
