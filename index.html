@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Encrypted Traffic Analytics NIDS: hybrid NFStream + Zeek extractor, split-edge architecture, demo and reproducibility instructions.">
+    <title>Encrypted Traffic Analytics | Hedie Tahmouresi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    
+    <style>
+        body {
+            background-color: #0f172a; /* Deep slate background for a sleek terminal feel */
+            color: #e2e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.8;
+            overflow-x: hidden;
+        }
+        h1, h2, h3, h4 { color: #f8fafc; }
+        .prose pre {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            overflow-x: auto;
+            white-space: pre;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .prose code { font-family: "Fira Code", monospace; font-size: 0.9em; }
+        
+        /* Interactive Simulator Styles */
+        .sim-container { position: relative; height: 160px; display: flex; align-items: center; justify-content: space-between; padding: 0 2rem; }
+        .sim-node { 
+            width: 140px; height: 140px; border-radius: 50%; background: #1e293b; border: 2px solid #475569;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+            z-index: 10; transition: all 0.3s ease; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .sim-node.active { border-color: #3b82f6; box-shadow: 0 0 25px rgba(59, 130, 246, 0.6); transform: scale(1.05); }
+        .sim-path { position: absolute; top: 50%; left: 0; right: 0; height: 4px; background: #334155; transform: translateY(-50%); z-index: 1; }
+        .sim-packet {
+            position: absolute; width: 20px; height: 20px; border-radius: 50%; background: #10b981;
+            top: 50%; transform: translate(-50%, -50%); opacity: 0; z-index: 20;
+        }
+        
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid #334155; }
+    </style>
+</head>
+<body class="antialiased selection:bg-blue-500 selection:text-white">
+
+    <nav class="fixed top-0 w-full glass-panel z-50">
+        <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="font-bold text-xl text-blue-400">Encrypted Traffic Analytics NIDS</div>
+            <div class="text-sm font-medium text-slate-400">Hedie Tahmouresi</div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-6 pt-32 pb-32 space-y-32">
+
+        <section class="space-y-8">
+            <h1 class="text-5xl md:text-6xl font-bold leading-tight">Seeing Through the Tunnel.</h1>
+            <p class="text-2xl text-slate-400 font-light max-w-4xl">
+                A 2-tier Split-Edge architecture designed to accurately classify malicious network traffic (Botnets, DoS, Exploits) hidden inside encrypted TLS 1.2/1.3 tunnels, relying solely on handshake metadata and flow geometry.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-12">
+                <div class="glass-panel p-6 rounded-xl border-t-4 border-blue-500">
+                    <h3 class="font-bold text-lg text-white mb-2">TLS Feature Ensemble</h3>
+                    <p class="text-sm text-slate-400 italic mb-2">Kondaiah et al., 2024</p>
+                    <p class="text-sm text-slate-300">Provided the theoretical basis for using unencrypted TLS handshake metadata (like offered Cipher Suites and SNI) to classify traffic before payload encryption begins.</p>
+                </div>
+                <div class="glass-panel p-6 rounded-xl border-t-4 border-purple-500">
+                    <h3 class="font-bold text-lg text-white mb-2">Network Datasets Survey</h3>
+                    <p class="text-sm text-slate-400 italic mb-2">Ring et al., 2019</p>
+                    <p class="text-sm text-slate-300">Highlighted the pervasive limitations, artificial routing artifacts, and severe class imbalances present in public datasets, guiding our rigorous data cleansing approach.</p>
+                </div>
+                <div class="glass-panel p-6 rounded-xl border-t-4 border-emerald-500">
+                    <h3 class="font-bold text-lg text-white mb-2">Extractor Comparison</h3>
+                    <p class="text-sm text-slate-400 italic mb-2">Lypa et al., 2024</p>
+                    <p class="text-sm text-slate-300">Proved that no single tool is sufficient. Demonstrated that semantic extractors (Zeek) and statistical extractors (NFStream) must be combined for modern NIDS.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-6 prose prose-invert max-w-none">
+            <h2 class="text-4xl font-bold border-b border-slate-700 pb-4">The Dataset Dilemma: Fixing CIC-IDS2017</h2>
+            <p class="text-lg text-slate-300">
+                After evaluating alternatives like Statesphere IoT, we selected <strong>CIC-IDS2017</strong>. However, the pre-processed CSVs provided by the researchers were critically flawed due to bugs in their extraction tool, <em>CICFlowMeter</em>. 
+            </p>
+            <div class="bg-red-900/20 border border-red-500/30 p-6 rounded-xl my-6">
+                <h4 class="text-red-400 font-bold mb-2">The CICFlowMeter Collapse</h4>
+                <p class="text-slate-300 text-sm">
+                    Roughly 25% of all pre-extracted flows contained meaningless data: negative flow durations, infinite byte rates, and corrupted TCP states. Training a model on this would result in a mathematically invalid system.
+                </p>
+            </div>
+            <p class="text-lg text-slate-300">
+                <strong>Our Solution:</strong> We discarded their CSVs entirely. We parsed the raw <code>.pcap</code> files through our own custom extraction pipeline. During training, we actively dropped highly correlated, dataset-specific routing artifacts to prevent overfitting:
+                <code class="px-2 py-1 bg-slate-800 rounded">Fwd Header Length.1</code>, 
+                <code class="px-2 py-1 bg-slate-800 rounded">Source IP</code>, 
+                <code class="px-2 py-1 bg-slate-800 rounded">Destination IP</code>, and 
+                <code class="px-2 py-1 bg-slate-800 rounded">Timestamp</code>. 
+                This ensures the model learns the physics of an attack, not just the IP address of the attacker.
+            </p>
+        </section>
+
+        <section class="space-y-8">
+            <h2 class="text-4xl font-bold border-b border-slate-700 pb-4">Module 1: The Hybrid Extractor</h2>
+            <p class="text-lg text-slate-300">
+                Because no single tool met our needs, we built a hybrid engine combining the mathematical geometry of <strong>NFStream</strong> with the event-driven deep inspection of <strong>Zeek</strong>.
+            </p>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="glass-panel p-6 rounded-xl">
+                    <h3 class="text-2xl font-bold text-blue-400 mb-4">NFStream: The Flow Geometry</h3>
+                    <p class="text-sm text-slate-300 mb-4">Calculates packet inter-arrival times (PIAT), standard deviations of packet sizes, and enforces strict connection boundaries to catch "Low & Slow" threats.</p>
+                    <pre><code class="language-python">streamer = NFStreamer(
+    source=self.pcap_path,
+    statistical_analysis=True,  
+    # Captures sequence of lengths/times for the first 10 packets 
+    # to fingerprint the handshake geometry
+    splt_analysis=10,
+    
+    # Cuts flows that stay idle maliciously (Slowloris)
+    idle_timeout=300,
+    
+    # Forces evaluation of long-running connections
+    active_timeout=1800
+)</code></pre>
+                </div>
+
+                <div class="glass-panel p-6 rounded-xl">
+                    <h3 class="text-2xl font-bold text-purple-400 mb-4">Zeek: The Event Analyst</h3>
+                    <p class="text-sm text-slate-300 mb-4">A custom <code>ml_extractor.zeek</code> script listens to specific application-layer events to extract the unencrypted metadata envelope before the payload is secured.</p>
+                    <ul class="space-y-3 text-sm text-slate-300 mb-4">
+                        <li><strong class="text-white">ssl_client_hello:</strong> Grabs SNI and Cipher Suites. Crucial for detecting exploits like Heartbleed during negotiation.</li>
+                        <li><strong class="text-white">ssh_client_version & auth_failed:</strong> Logs explicit brute force attempts.</li>
+                        <li><strong class="text-white">connection_state_remove:</strong> Logs the exact TCP tear-down state, even if the connection is maliciously aborted via RST to avoid detection.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700 mt-6">
+                <h4 class="font-bold text-white mb-2">The Merge Strategy (Avoid Cartesian Products)</h4>
+                <p class="text-sm text-slate-300">
+                    Merging these datasets is computationally complex. We utilized a <strong>5-Tuple</strong> merge (Source/Dest IP, Source/Dest Port, Protocol) aligned with a <strong>Timestamp Rolling Window</strong> (e.g., aggregating SSH flows past 60s). This prevents data duplication and allows the model to "remember" distributed brute-force attempts spanning multiple parallel connections.
+                </p>
+            </div>
+        </section>
+
+        <section class="space-y-8">
+            <h2 class="text-4xl font-bold border-b border-slate-700 pb-4">The Architecture in Action</h2>
+            <p class="text-lg text-slate-300">
+                Our modules operate in a 2-tier pipeline. <strong>Tier 1 (Logistic Regression)</strong> acts as a high-speed bouncer at the edge, relying purely on lightweight flow statistics to filter out normal traffic. Flagged anomalies are sent to <strong>Tier 2 (XGBoost)</strong> at the gateway for deep, multi-class threat analysis using the heavy Zeek metadata.
+            </p>
+
+            <div class="glass-panel rounded-xl p-8 overflow-hidden">
+                <div class="flex flex-wrap justify-center gap-4 mb-12">
+                    <button onclick="runSimulation('benign')" aria-label="Inject normal web traffic" title="Inject normal web traffic" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded shadow transition-colors">Inject Normal Web Traffic</button>
+                    <button onclick="runSimulation('scan')" aria-label="Inject SYN port scan" title="Inject SYN port scan" class="px-6 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded shadow transition-colors">Inject SYN Port Scan</button>
+                    <button onclick="runSimulation('brute')" aria-label="Inject SSH brute force" title="Inject SSH brute force" class="px-6 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded shadow transition-colors">Inject SSH Brute Force</button>
+                </div>
+
+                <div class="sim-container max-w-4xl mx-auto">
+                    <div class="sim-path"></div>
+                    <div id="sim-packet" class="sim-packet"></div>
+                    
+                    <div id="node1" class="sim-node">
+                        <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Module 1</span>
+                        <span class="text-sm font-bold text-white mt-1">Hybrid<br>Extractor</span>
+                    </div>
+                    <div id="node2" class="sim-node">
+                        <span class="text-xs text-slate-400 font-bold uppercase tracking-wider">Module 2</span>
+                        <span class="text-sm font-bold text-white mt-1">Data<br>Preprocessor</span>
+                    </div>
+                    <div id="node3" class="sim-node">
+                        <span class="text-xs text-blue-400 font-bold uppercase tracking-wider">Module 3 (Tier 1)</span>
+                        <span class="text-sm font-bold text-white mt-1">Edge Bouncer<br>(LogReg)</span>
+                    </div>
+                    <div id="node4" class="sim-node opacity-40">
+                        <span class="text-xs text-purple-400 font-bold uppercase tracking-wider">Module 3 (Tier 2)</span>
+                        <span class="text-sm font-bold text-white mt-1">Gateway Analyzer<br>(XGBoost)</span>
+                    </div>
+                </div>
+
+                <div id="sim-log" class="mt-12 p-4 bg-slate-900 rounded font-mono text-sm min-h-[100px] border border-slate-700">
+                    <span class="text-slate-500">Waiting for traffic injection...</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-8">
+            <h2 class="text-4xl font-bold border-b border-slate-700 pb-4">Results & Reproducibility</h2>
+            <div class="glass-panel rounded-xl p-6">
+                <h3 class="font-bold text-lg text-white mb-2">Quick Run</h3>
+                <p class="text-sm text-slate-300 mb-4">Minimal steps to reproduce the demo locally (assumes a POSIX shell):</p>
+                <pre class="prose"><code>python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python src/main.py</code></pre>
+
+                <h3 class="font-bold text-lg text-white mt-4 mb-2">Notes</h3>
+                <ul class="text-sm text-slate-300 list-disc pl-5">
+                    <li>Example PCAP: <em>data/raw/test.pcap</em></li>
+                    <li>Pre-extracted features: <em>data/processed/</em></li>
+                    <li>Trained model artifacts live in <em>models/</em> — list filenames and sizes for reproducibility.</li>
+                    <li>Key metrics to add: per-class Precision/Recall/F1 and a confusion matrix image.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="space-y-8">
+            <h2 class="text-4xl font-bold border-b border-slate-700 pb-4">Inside the Models: Feature Logic</h2>
+            <p class="text-lg text-slate-300">
+                The models did not just memorize data; they learned the actual physics of networking. Click on any feature below to reveal the network engineering concept behind the mathematics.
+            </p>
+
+            <div class="flex flex-col lg:flex-row gap-8">
+                <div class="w-full lg:w-2/3 glass-panel p-6 rounded-xl">
+                    <div class="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+                        <h3 id="chart-title" class="text-xl font-bold text-white">Tier 1: Edge Bouncer Weights</h3>
+                        <div class="flex gap-2">
+                            <button id="btn-t1" onclick="loadChart('t1')" class="px-4 py-1 text-sm rounded bg-blue-600 text-white font-medium">Tier 1</button>
+                            <button id="btn-t2" onclick="loadChart('t2')" class="px-4 py-1 text-sm rounded bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors">Tier 2</button>
+                        </div>
+                    </div>
+                    <div class="relative h-[400px] w-full">
+                        <canvas id="featureChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="w-full lg:w-1/3 glass-panel p-6 rounded-xl flex flex-col">
+                    <h3 class="text-lg font-bold text-slate-300 uppercase tracking-widest mb-4 border-b border-slate-700 pb-2">Network Physics</h3>
+                    <div id="feature-explanation" class="text-slate-300 text-base leading-relaxed">
+                        <em class="text-slate-500">Select a feature from the chart to view its networking logic...</em>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // --- SIMULATION LOGIC ---
+        const typeConfig = {
+            'benign': { color: '#10b981', logs: [
+                "[*] Flow captured. Extracting stats...",
+                "[*] Data scaled and cleaned.",
+                "[+] TIER 1 VERDICT: BENIGN. Flow geometry matches human variance.",
+                "[✓] Connection allowed. Tier 2 bypassed to save bandwidth."
+            ]},
+            'scan': { color: '#f59e0b', logs: [
+                "[*] Flow captured. Extracting stats...",
+                "[*] Data scaled and cleaned.",
+                "[!] TIER 1 VERDICT: ANOMALY. Abnormal TCP State (conn_state_S0) detected.",
+                "[*] Forwarding to Gateway Analyzer...",
+                "[!] TIER 2 VERDICT: DoS / Port Scan. Connection blocked."
+            ]},
+            'brute': { color: '#ef4444', logs: [
+                "[*] Flow captured. Extracting stats...",
+                "[*] Data scaled and cleaned.",
+                "[!] TIER 1 VERDICT: ANOMALY. Rigid mathematical PIAT detected.",
+                "[*] Forwarding to Gateway Analyzer...",
+                "[!] TIER 2 VERDICT: BRUTE FORCE. Identical standard deviation of packet sizes (dst2src_stddev_ps). Blocked."
+            ]}
+        };
+
+        function writeLog(text, delay, colorClass) {
+            setTimeout(() => {
+                const logBox = document.getElementById('sim-log');
+                if(logBox.innerHTML.includes("Waiting")) logBox.innerHTML = '';
+                logBox.innerHTML += `<div class="${colorClass}">${text}</div>`;
+                logBox.scrollTop = logBox.scrollHeight;
+            }, delay);
+        }
+
+        function runSimulation(type) {
+            const packet = document.getElementById('sim-packet');
+            const nodes = [document.getElementById('node1'), document.getElementById('node2'), document.getElementById('node3'), document.getElementById('node4')];
+            const logBox = document.getElementById('sim-log');
+            const conf = typeConfig[type];
+
+            // Reset
+            packet.style.transition = 'none'; packet.style.opacity = '0'; packet.style.left = '5%';
+            nodes.forEach(n => n.classList.remove('active'));
+            nodes[3].style.opacity = '0.4';
+            logBox.innerHTML = '';
+            packet.style.backgroundColor = conf.color;
+
+            // Animate
+            setTimeout(() => {
+                packet.style.transition = 'all 0.8s ease-in-out'; packet.style.opacity = '1';
+                
+                // Node 1
+                setTimeout(() => { packet.style.left = '16%'; nodes[0].classList.add('active'); writeLog(conf.logs[0], 0, 'text-slate-400'); }, 100);
+                
+                // Node 2
+                setTimeout(() => { packet.style.left = '41%'; nodes[0].classList.remove('active'); nodes[1].classList.add('active'); writeLog(conf.logs[1], 0, 'text-slate-400'); }, 1000);
+                
+                // Node 3 (Tier 1)
+                setTimeout(() => { 
+                    packet.style.left = '66%'; nodes[1].classList.remove('active'); nodes[2].classList.add('active'); 
+                    writeLog(conf.logs[2], 0, type === 'benign' ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold');
+                    
+                    if(type === 'benign') {
+                        setTimeout(() => { packet.style.opacity = '0'; nodes[2].classList.remove('active'); writeLog(conf.logs[3], 0, 'text-emerald-500'); }, 1000);
+                    } else {
+                        setTimeout(() => { 
+                            packet.style.left = '92%'; nodes[2].classList.remove('active'); 
+                            nodes[3].style.opacity = '1'; nodes[3].classList.add('active');
+                            writeLog(conf.logs[3], 0, 'text-slate-400');
+                            
+                            setTimeout(() => { packet.style.opacity = '0'; nodes[3].classList.remove('active'); writeLog(conf.logs[4], 0, 'text-red-500 font-bold'); }, 1000);
+                        }, 1000);
+                    }
+                }, 1900);
+            }, 50);
+        }
+
+        // --- CHART LOGIC ---
+        const featureDict = {
+            'conn_state_S0': "<strong>State Machine Logic (Zeek):</strong> SYN packet was sent, but no reply was ever received. This is the exact textbook definition of a SYN Flood or Port Scan. Tier 1 heavily weights this (6.99) toward Anomaly.",
+            'conn_state_SF': "<strong>State Machine Logic (Zeek):</strong> Normal establishment and teardown (SYN -> SYN/ACK -> ACK -> FIN). Tier 1 heavily weights this (-7.87) toward Benign.",
+            'dst2src_mean_piat_ms': "<strong>Timing & Automation (NFStream):</strong> Packet Inter-Arrival Time. Human web browsing generates highly variable, messy timing gaps. Automated botnets (like Hydra or Slowloris) have rigid, mathematical timing gaps. The model detects this lack of human variance.",
+            'dst2src_stddev_ps': "<strong>Flow Geometry (NFStream):</strong> Standard deviation of packet sizes. This is the ultimate fingerprint for Tier 2 (0.422 importance). A brute-force SSH attack will have highly predictable packet sizes (username prompt, password guess, failure), resulting in very low standard deviation compared to normal web streaming.",
+            'protocol': "<strong>Fundamental Baseline:</strong> It is normal for protocol to have a massive weight (-15.61). The geometry of a UDP flow (DNS reflection attack) is fundamentally different from a TCP flow (Slowloris). The model uses this as the root node to interpret all other bytes.",
+            'sni_domain': "<strong>Deep L7 Inspection (Zeek):</strong> Extracted during the `ssl_client_hello`. Tier 2 uses the Server Name Indication and offered Cipher Suites to differentiate between standard network noise and L7 Web Floods or Exploits like Heartbleed.",
+            'history': "<strong>Connection History (Zeek):</strong> A string summarizing the connection state history (e.g., 'ShADadFf'). The XGBoost model looks for abnormal teardown patterns that standard packet counting misses.",
+            'src2dst_syn_packets': "<strong>Flag Ratios:</strong> Tracking the sheer volume of SYN packets traveling from source to destination. A key indicator of DDoS attempts overwhelming the target."
+        };
+
+        const t1Data = {
+            labels: ['dst2src_mean_piat_ms', 'dst2src_stddev_ps', 'conn_state_S0', 'conn_state_SF', 'protocol'],
+            data: [13.07, 10.34, 6.99, -7.87, -15.61],
+            colors: ['#3b82f6', '#3b82f6', '#3b82f6', '#10b981', '#10b981'],
+            title: "Tier 1: Logistic Regression Weights (Edge)"
+        };
+
+        const t2Data = {
+            labels: ['dst2src_stddev_ps', 'src2dst_syn_packets', 'history', 'dst2src_mean_ps', 'sni_domain'],
+            data: [0.422, 0.083, 0.051, 0.041, 0.022],
+            colors: ['#a855f7', '#a855f7', '#a855f7', '#a855f7', '#a855f7'],
+            title: "Tier 2: XGBoost Feature Importance (Gateway)"
+        };
+
+        let currentChart;
+
+        function initChart() {
+            const ctx = document.getElementById('featureChart').getContext('2d');
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: t1Data.labels,
+                    datasets: [{
+                        data: t1Data.data, backgroundColor: t1Data.colors, borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+                        y: { grid: { display: false }, ticks: { color: '#e2e8f0', font: { family: 'monospace' } } }
+                    },
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
+                            const index = elements[0].index;
+                            const featureName = currentChart.data.labels[index];
+                            document.getElementById('feature-explanation').innerHTML = `<div class="p-4 bg-slate-800/50 rounded border border-slate-700"><span class="text-blue-400 font-mono text-sm block mb-2">${featureName}</span>${featureDict[featureName] || "Brute Force/Exploits: These often have very specific, repetitive packet size averages because they are sending the same authentication or exploit payload repeatedly.Web Floods/DoS: These can manifest as a flood of abnormally small or uniformly sized packets, shifting the 'mean' value away from what is seen in a benign, diverse traffic stream."}</div>`;
+                        }
+                    }
+                }
+            });
+        }
+
+        function loadChart(tier) {
+            const data = tier === 't1' ? t1Data : t2Data;
+            document.getElementById('chart-title').innerText = data.title;
+            
+            document.getElementById('btn-t1').className = tier === 't1' ? 'px-4 py-1 text-sm rounded bg-blue-600 text-white font-medium' : 'px-4 py-1 text-sm rounded bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors';
+            document.getElementById('btn-t2').className = tier === 't2' ? 'px-4 py-1 text-sm rounded bg-purple-600 text-white font-medium' : 'px-4 py-1 text-sm rounded bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors';
+
+            currentChart.data.labels = data.labels;
+            currentChart.data.datasets[0].data = data.data;
+            currentChart.data.datasets[0].backgroundColor = data.colors;
+            currentChart.update();
+            
+            document.getElementById('feature-explanation').innerHTML = '<em class="text-slate-500">Select a feature from the chart to view its networking logic...</em>';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof hljs !== 'undefined') hljs.highlightAll();
+            initChart();
+        });
+    </script>
+</body>
+</html>
