@@ -32,6 +32,8 @@ class InferenceEngine:
         t2_input = self.preprocessor.prepare_for_tier(raw_flow_df, self.t2_features, tier=2)
         t2_pred = self.t2_pipeline.predict(t2_input)[0]
         
+        print(f"[DEBUG] Tier 1 Flagged Anomaly | Tier 2 Output: {t2_pred}")
+
         if t2_pred == 0:
             return "BENIGN", None
         

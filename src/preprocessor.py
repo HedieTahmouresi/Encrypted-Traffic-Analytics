@@ -4,11 +4,14 @@ class StreamPreprocessor:
     def __init__(self):
 
         self.tier2_contaminants = [
+            # Identifiers & Timestamps
             'id', 'uid', 'src_ip', 'dst_ip', 'src_mac', 'dst_mac', 
             'src_oui', 'dst_oui', 'vlan_id', 'tunnel_id', 'src_port', 'dst_port',
             'datetime', 'ts', 'ts_ms', 'bidirectional_first_seen_ms', 
             'bidirectional_last_seen_ms', 'src2dst_first_seen_ms', 
             'src2dst_last_seen_ms', 'dst2src_first_seen_ms', 'dst2src_last_seen_ms',
+            
+            # L7 Plaintext Leaks (The "Cheating" Features)
             'application_name', 'application_category_name', 'application_is_guessed', 
             'application_confidence', 'content_type', 'user_agent',
             'http_requests', 'http_error_codes',
