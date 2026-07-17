@@ -4,7 +4,9 @@ from inference_engine import InferenceEngine
 
 warnings.filterwarnings('ignore') 
 
-PCAP_PATH = "./data/raw/test.pcap" 
+import sys
+
+PCAP_PATH = sys.argv[1] if len(sys.argv) > 1 else "./data/raw/test.pcap" 
 OUTPUT_DIR = "./data/processed/live_inference"
 MODEL_T1 = "./models/tier1_edge_pipeline.pkl"
 MODEL_T2 = "./models/tier2_gateway_pipeline.pkl"
